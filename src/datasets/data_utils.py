@@ -1,7 +1,10 @@
 from itertools import repeat
-
+import torch
 from hydra.utils import instantiate
-
+import importlib
+import torch_geometric
+import torch_geometric.transforms as T
+from ogb.nodeproppred import PygNodePropPredDataset
 from src.datasets.collate import collate_fn
 from src.utils.init_utils import set_worker_seed
 
@@ -86,3 +89,37 @@ def get_dataloaders(config, device):
         dataloaders[dataset_partition] = partition_dataloader
 
     return dataloaders, batch_transforms
+
+def allowlist_pyg_for_torch_load():
+    """Allowlist common PyG classes used in pickled datasets (PyTorch 2.6+)."""
+    candidate_paths = [
+        "torch_geometric.data.data.Data",
+        "torch_geometric.data.data.DataTensorAttr",
+        "torch_geometric.data.data.DataEdgeAttr",
+        "torch_geometric.data.storage.BaseStorage",
+        "torch_geometric.data.storage.NodeStorage",
+        "torch_geometric.data.storage.EdgeStorage",
+        "torch_geometric.data.storage.GlobalStorage",
+    ]
+    allowed = []
+    for dotted in candidate_paths:
+        try:
+            module_path, name = dotted.rsplit(".", 1)
+            mod = importlib.import_module(module_path)
+            allowed.append(getattr(mod, name))
+        except Exception:
+            pass
+    if allowed:
+        torch.serialization.add_safe_globals(allowed)
+
+# allowlist_pyg_for_torch_load()
+
+# dataset_name = 'ogbn-arxiv'
+# # Load the dataset and transform it to sparse tensor
+# dataset = PygNodePropPredDataset(name=dataset_name,
+#                                 transform=T.ToSparseTensor())
+# print('The {} dataset has {} graph'.format(dataset_name, len(dataset)))
+
+# # Extract the graph
+# data = dataset[0]
+# print(data)
