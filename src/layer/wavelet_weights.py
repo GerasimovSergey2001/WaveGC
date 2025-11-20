@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 
-from ..layer.encoders import TrigonometricEncoder
+from src.layer.encoders import TrigonometricEncoder
 
 
 class FFN(nn.Module):
     def __init__(self, inp_dim, out_dim, hidden_dim, hidden_num, act=nn.SiLU):
         super().__init__()
+        
+        # register act
         self.ffn = [nn.Linear(inp_dim, hidden_dim), act()]
         
         for _ in range(hidden_num):
@@ -32,14 +34,14 @@ class WaveletCoefs(nn.Module):
         self.ffn_droput = nn.Dropout(dropout)
 
     def forward(self, eigvs, eigvs_mask=None):
-        x = self.encoder(eigvs)
-        x = self.layer_norm_transformer(x)
-        x, _ = self.transformer(x, x, x, key_padding_mask=eigvs_mask)
+        z = self.encoder(eigvs)
+        z = self.layer_norm_transformer(z)
+        z, _ = self.transformer(z, z, z, key_padding_mask=eigvs_mask)
 
-        x = x + self.transformer_dropout(x)
+        z = z + self.transformer_dropout(z)
         
-        x = x + self.ffn_droput(self.ffn(self.layer_norm_ffn(x)))
-        return x 
+        z = z + self.ffn_droput(self.ffn(self.layer_norm_ffn(z)))
+        return z 
 
 
         
