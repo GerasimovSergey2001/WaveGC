@@ -1,66 +1,97 @@
 import torch
+import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import eigsh
+from scipy.linalg import eigh
 from torch_geometric.data import Data
-from torch_geometric.utils import get_laplacian, to_dense_adj
+from torch_geometric.utils import get_laplacian, to_scipy_sparse_matrix
 
 
 class WaveGCSpectralTransform:
-    def __init__(self, mode='long', top_k_pct=1.0, threshold=0.0):
+    def __init__(self, mode='long', top_k=None, top_k_pct=1.0, threshold=0.0):
         """
-        Computes Eigendecomposition for WaveGC.
-
         Args:
             mode (str): 'short' or 'long'.
-            top_k_pct (float): Percentage of eigenvalues to keep.
-                               Paper uses 0.30 for short-range.
-            threshold (float): Threshold for sparsifying U.
-                               Paper uses 0.1 for short-range.
+            top_k (int, optional): Exact number of eigenvalues to keep.
+                                   Prioritized over top_k_pct if set.
+            top_k_pct (float): Percentage of eigenvalues to keep (default 1.0).
+            threshold (float): Threshold for sparsifying U (default 0.0).
         """
         self.mode = mode
+        self.top_k = top_k
         self.top_k_pct = top_k_pct
         self.threshold = threshold
 
     def __call__(self, data: Data) -> Data:
-        num_nodes = data.num_nodes
+        N = data.num_nodes
+        assert isinstance(N, int) and N > 0, "num_nodes must be a positive integer"
 
-        # 1. Compute Normalized Laplacian: L = I - D^-0.5 A D^-0.5
+        # 1. Determine target k (number of eigenvalues)
+        if self.top_k is not None:
+            k = self.top_k
+        else:
+            k = int(N * self.top_k_pct)
+            if k < 2:
+                k = 2  # Safety floor
+
+        # 2. Compute Sparse Laplacian
+        # L = I - D^-0.5 A D^-0.5
         assert data.edge_index is not None, "Data object must have edge_index"
         edge_index, edge_weight = get_laplacian(
             data.edge_index,
             edge_weight=data.edge_attr,
             normalization='sym',
-            num_nodes=num_nodes
+            num_nodes=N
         )
 
-        # Convert to dense for eigendecomposition (Complexity O(N^3))
-        # For large graphs like ogbn-arxiv, you would need scipy.sparse.linalg here.
-        L = to_dense_adj(edge_index, edge_attr=edge_weight, max_num_nodes=num_nodes).squeeze(0)
+        # Convert directly to Scipy CSR (O(E) memory)
+        L_sparse = to_scipy_sparse_matrix(edge_index, edge_attr=edge_weight, num_nodes=N)
 
-        # 2. Eigendecomposition
-        # eigh returns eigenvalues in ascending order
-        eigvs, U = torch.linalg.eigh(L)
-        assert U is not None, "Eigendecomposition failed"
+        # 3. Eigendecomposition (The logic to handle N < k)        # Case A: Graph is smaller than requested k (Padding required)
+        # OR Graph is too small for sparse iterative solver (k >= N-1)
+        if k >= N - 1:
+            # We must compute ALL eigenvalues.
+            # For small graphs (Peptides ~150 nodes), converting to dense is efficient and stable.
+            L_dense = L_sparse.toarray()
+            eig_vals, U = eigh(L_dense)
 
-        # Clamp to theoretical bounds [0, 2] to fix numerical precision issues
-        eigvs = torch.clamp(eigvs, 0.0, 2.0)
+            # Pad if we requested more than N
+            if k > N:
+                pad_size = k - N
+                # Pad Eigenvalues with 0 (or a dummy value, usually 0 for frequency)
+                eig_vals = np.pad(eig_vals, (0, pad_size), 'constant', constant_values=0)
+                # Pad Eigenvectors with 0
+                U = np.pad(U, ((0, 0), (0, pad_size)), 'constant', constant_values=0)
 
-        # --- NUANCE: Spectral Truncation (Short-Range) ---
-        if self.mode == 'short':
-            # Keep only the lowest 'k' frequencies (smooth signals)
-            assert isinstance(num_nodes, int), "num_nodes must be an integer"
-            k = int(num_nodes * self.top_k_pct)
-            if k < 2:
-                k = 2  # Safety floor
+        # Case B: Large graph, seeking subset of spectrum (Optimization)
+        else:
+            # Use Arpack (Lanczos) for subset of eigenvalues
+            # which='SM' -> Smallest Magnitude (Low Frequencies/Smooth signals)
+            try:
+                eig_vals, U = eigsh(L_sparse, k=k, which='SM', return_eigenvectors=True)
+            except RuntimeError:
+                # Fallback if Arpack fails to converge
+                L_dense = L_sparse.toarray()
+                eig_vals, U = eigh(L_dense)
+                eig_vals = eig_vals[:k]
+                U = U[:, :k]
 
-            eigvs = eigvs[:k]
-            U = U[:, :k]
+        # 4. Convert to Tensor
+        # eig_vals: [k]
+        # U: [N, k]
+        eig_vals = torch.from_numpy(eig_vals).float()
+        U = torch.from_numpy(U).float()
 
-        # --- NUANCE: Hard Thresholding (Short-Range) ---
+        # Clamp for numerical stability (Theoretically in [0, 2])
+        eig_vals = torch.clamp(eig_vals, 0.0, 2.0)
+
+        # [cite_start]5. Sparsification (Short-Range Nuance) [cite: 763]
         if self.threshold > 0:
             mask = torch.abs(U) >= self.threshold
             U = U * mask
 
-        # 3. Store in Data object
-        data.eigvs = eigvs
+        # Store results
+        data.eigvs = eig_vals
         data.U = U
 
         return data
