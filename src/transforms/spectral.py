@@ -91,7 +91,7 @@ class WaveGCSpectralTransform:
             U = U * mask
 
         # Store results
-        data.eigvs = eig_vals
+        data.eigvs = eig_vals.view(1, -1)
         data.U = U
 
         return data

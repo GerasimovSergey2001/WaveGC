@@ -19,15 +19,15 @@ class TrigonometricEncoder(nn.Module):
 
     def forward(self, eigvs: torch.tensor):
         """
-        eigvs: [B, N]
+        eigvs: [1, N]
         """
-        x = self.eps * eigvs[:, :, None] * self.den
-
+        x = self.eps * eigvs[:,:, None] * self.den
+        pos_enc = torch.cat([torch.sin(x), torch.cos(x)], axis=-1)
         if self.project:
-            x = torch.cat([eigvs[:, :, None], torch.sin(x), torch.cos(x)], axis=2)
+            x = torch.cat([eigvs[:,:, None], pos_enc], axis=-1).squeeze(0)
             return self.proj(x)
         else:
-            return eigvs[:, :, None] + torch.cat([torch.sin(x), torch.cos(x)], axis=2)
+            return (eigvs[:, :, None] + pos_enc).squeeze(0)
         
 class WaveletCoefs(nn.Module):
 
@@ -50,15 +50,71 @@ class WaveletCoefs(nn.Module):
         z = z + self.transformer_dropout(z)
         z = z + self.ffn_droput(self.ffn(self.layer_norm_ffn(z)))
         return z
+    
+class LapPE(nn.Module):
+    
+    def __init__(self, inp_dim, emb_dim, pe_dim, eigvs_dim, hidden_num):
+        super().__init__()
+        self.dim_emb = emb_dim
+        self.norm = nn.BatchNorm1d(eigvs_dim)
+        self.pe_encoder = FFN(inp_dim=2, out_dim=pe_dim, hidden_dim=2*pe_dim, hidden_num=hidden_num)
+        if emb_dim-pe_dim < 0:
+            raise ValueError(f"Positional Encoding embeddings are of size {pe_dim} which is greater than feature embeddings of size {emb_dim}")
+
+        self.proj_x = nn.Linear(inp_dim, emb_dim-pe_dim)
+
+
+    def forward(self, x, eigvs, U):
+
+        sign = torch.randn((1, U.shape[1]), device=eigvs.device)
+        
+        if self.training:
+            sign[sign>0] = 1
+            sign[sign<0] = -1
+        
+        U = U * sign 
+
+        pe = torch.cat(
+            [
+            U.unsqueeze(-1), 
+            eigvs.expand(U.shape[0],-1).unsqueeze(-1)
+            ], 
+            dim=-1)
+        pe = self.norm(pe)
+        pe = self.pe_encoder(pe)
+        pe = torch.sum(pe, dim=-2)
+        embs = self.proj_x(x)
+        return torch.cat([embs, pe], dim=-1)
         
 
+        
 class DataProcessing(nn.Module):
       
-      def __init__(self, inp_dim, hidden_dim, heads_num, scale, K=6, J=5, dropout=0.1, eps=100, hidden_num=0):
+      def __init__(self, 
+                   inp_dim, 
+                   emb_dim, 
+                   pe_dim, 
+                   eigvs_dim,
+                   lape_hidden_num,
+                   hidden_dim, 
+                   heads_num, 
+                   scale, 
+                   K, 
+                   J, 
+                   dropout=0.01, 
+                   eps=100, 
+                   hidden_num=0):
+        
         super().__init__()
 
-        self.rho = K//2
+        self.rho = K//2 if K%2==0 else (K+1)//2
         self.J = J
+        self.lape = LapPE(
+            inp_dim=inp_dim, 
+            emb_dim=emb_dim, 
+            pe_dim=pe_dim, 
+            eigvs_dim=eigvs_dim, 
+            hidden_num=lape_hidden_num)
 
         self.proj_features = FFN(inp_dim=inp_dim, out_dim=hidden_dim, hidden_num=hidden_num)
         self.proj_a = nn.Linear(hidden_dim, self.rho)
@@ -71,11 +127,12 @@ class DataProcessing(nn.Module):
        
         self.register_buffer('scale', scale.view(1, self.J))
 
-      def forward(self, features, eigvs, eigvs_mask=None):
+      def forward(self, x, eigvs, U, eigvs_mask=None):
 
-        feature_encoding = self.proj_features(features)
+        feature_encoding = self.lape(x, eigvs, U)
         pos_encoding = self.weight_function(eigvs, eigvs_mask)
-        a_tilde = self.proj_a(pos_encoding).mean(dim=-2) 
-        b_tilde = self.proj_b(pos_encoding).mean(dim=-2)
+        a_tilde = self.proj_a(pos_encoding).mean(dim=-2).unsqueeze(0)
+        b_tilde = self.proj_b(pos_encoding).mean(dim=-2).unsqueeze(0)
         scale_tilde = self.sigmoid( self.proj_s(pos_encoding).mean(dim=-2) ) * self.scale 
-        return torch.cat([feature_encoding, pos_encoding], dim=-1), a_tilde, b_tilde, scale_tilde
+        return feature_encoding, a_tilde, b_tilde, scale_tilde
+
