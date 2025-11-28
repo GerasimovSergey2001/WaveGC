@@ -1,5 +1,4 @@
 import warnings
-
 import hydra
 import torch
 from hydra.utils import instantiate
@@ -11,47 +10,58 @@ from src.utils.init_utils import set_random_seed, setup_saving_and_logging
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-
-@hydra.main(version_base=None, config_path="src/configs", config_name="baseline")
+# CHANGE 1: Point config_path to the root 'configs' folder
+@hydra.main(version_base=None, config_path="configs", config_name="train_config")
 def main(config):
     """
     Main script for training. Instantiates the model, optimizer, scheduler,
     metrics, logger, writer, and dataloaders. Runs Trainer to train and
     evaluate the model.
-
-    Args:
-        config (DictConfig): hydra experiment config.
     """
     set_random_seed(config.trainer.seed)
 
     project_config = OmegaConf.to_container(config)
-    logger = setup_saving_and_logging(config)
-    writer = instantiate(config.writer, logger, project_config)
+    # Ensure src.utils.init_utils exists, otherwise use a simple logger
+    try:
+        logger = setup_saving_and_logging(config)
+    except ImportError:
+        import logging
+        logger = logging.getLogger(__name__)
+    
+    # Instantiate Writer (Tensorboard/WandB)
+    writer = instantiate(config.writer, logger=logger, project_config=project_config)
 
     if config.trainer.device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = config.trainer.device
 
-    # setup data_loader instances
-    # batch_transforms should be put on device
+    # 1. Setup DataLoaders (Uses your dense collate_fn automatically)
     dataloaders, batch_transforms = get_dataloaders(config, device)
 
-    # build model architecture, then print to console
+    # 2. Build Model (WaveGCNet)
     model = instantiate(config.model).to(device)
-    logger.info(model)
+    logger.info(f"Model: {config.model._target_}")
 
-    # get function handles of loss and metrics
+    # 3. Setup Loss and Metrics
     loss_function = instantiate(config.loss_function).to(device)
-    metrics = instantiate(config.metrics)
 
-    # build optimizer, learning rate scheduler
+    # CHANGE 2: Manually instantiate metrics to ensure correct dict structure
+    # This prevents errors if Hydra doesn't automatically parse the list structure
+    metrics = {
+        "train": [instantiate(m) for m in config.metrics.train],
+        "inference": [instantiate(m) for m in config.metrics.inference]
+    }
+
+    # 4. Build Optimizer & Scheduler
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = instantiate(config.optimizer, params=trainable_params)
-    lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer)
+    
+    lr_scheduler = None
+    if "lr_scheduler" in config:
+        lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer)
 
-    # epoch_len = number of iterations for iteration-based training
-    # epoch_len = None or len(dataloader) for epoch-based training
+    # 5. Initialize Trainer
     epoch_len = config.trainer.get("epoch_len")
 
     trainer = Trainer(
@@ -70,8 +80,8 @@ def main(config):
         skip_oom=config.trainer.get("skip_oom", True),
     )
 
+    # 6. Run Training
     trainer.train()
-
 
 if __name__ == "__main__":
     main()

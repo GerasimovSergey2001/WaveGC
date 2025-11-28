@@ -423,7 +423,7 @@ class BaseTrainer:
         return base.format(current, total, 100.0 * current / total)
 
     @abstractmethod
-    def _log_batch(self, batch_idx, batch, mode="train"):
+    def _log_batch(self, batch_idx, batch, mode="train") -> None:
         """
         Abstract method. Should be defined in the nested Trainer Class.
 
@@ -437,7 +437,8 @@ class BaseTrainer:
             mode (str): train or inference. Defines which logging
                 rules to apply.
         """
-        return NotImplementedError()
+        raise NotImplementedError()
+
 
     def _log_scalars(self, metric_tracker: MetricTracker):
         """

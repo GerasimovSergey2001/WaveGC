@@ -9,7 +9,7 @@ class PeptidesStructDataset(LRGBDataset):
             # Long-range settings: Full spectrum
             WaveGCSpectralTransform(mode='long', top_k_pct=1.0, threshold=0.0)
         ])
-        super().__init__(root=root, name='Peptides-struct', transform=transform)
+        super().__init__(root=root, name='Peptides-struct', pre_transform=transform)
 
     def __getitem__(self, idx):
         data = super().__getitem__(idx)

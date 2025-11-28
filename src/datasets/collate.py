@@ -1,5 +1,6 @@
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from torch_geometric.data import Batch
 
 
 def collate_fn(dataset_items: list):
@@ -46,11 +47,17 @@ def collate_fn(dataset_items: list):
         eigvs_mask[i, :num_k] = False
 
         labels.append(data.y)
+    
+    pyg_batch = Batch.from_data_list(dataset_items)
+    sparse_edge_index = pyg_batch.edge_index  # type: ignore[attr-defined]
 
     return {
         "x": x_padded,
         "eigvs": eigvs_padded,
         "U": U_padded,
         "eigvs_mask": eigvs_mask,
-        "labels": torch.stack(labels)
+        "labels": torch.stack(labels),
+        "edge_index": sparse_edge_index,
+        "batch_idx": pyg_batch.batch  # type: ignore[attr-defined]
+
     }
