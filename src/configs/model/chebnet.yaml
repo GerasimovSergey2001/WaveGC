@@ -1,0 +1,7 @@
+_target_: src.model.chebnet.ChebNet
+hidden_dim: 64
+K: 3
+num_layers: 4
+dropout: 0.1
+res_connection: True
+_partial_: True
