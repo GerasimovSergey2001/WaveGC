@@ -16,12 +16,13 @@ class TrigonometricEncoder(nn.Module):
         self.proj = nn.Linear(self.d + 1, self.d)
         self.project = project
         self.register_buffer("denominator", self.den)
+        self.register_buffer("eps_const", self.den)
 
     def forward(self, eigvs: torch.tensor):
         """
         eigvs: [1, N]
         """
-        x = self.eps * eigvs[:,:, None] * self.den
+        x = self.eps_const * eigvs[:,:, None] * self.denominator
         pos_enc = torch.cat([torch.sin(x), torch.cos(x)], axis=-1)
         if self.project:
             x = torch.cat([eigvs[:,:, None], pos_enc], axis=-1).squeeze(0)

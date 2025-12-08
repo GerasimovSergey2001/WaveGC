@@ -34,5 +34,18 @@ class MaskedAccuracy(BaseMetric):
             metric (float): calculated metric.
         """
         classes = logits.argmax(dim=-1).to(torch.long)
-        acc = self.metric(classes[mask], labels[mask]) if mask is not None else self.metric(classes, labels)
+        
+        if mask is not None:
+            pred = classes[mask]
+            true = labels[mask]
+        else:
+            pred = classes
+            true = labels
+            
+        device = self.metric.device
+        
+        pred = pred.to(device)
+        true = true.to(device)
+        
+        acc = self.metric(pred, true)
         return acc
