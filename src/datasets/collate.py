@@ -16,7 +16,7 @@ def collate_fn(dataset_items: list):
 
     # Spectral: Max eigenvalues available in this batch
     # (If using fixed top_k in transform, this is constant. If pct, it varies)
-    max_k = max([item.eigvs.shape[0] for item in dataset_items])
+    max_k = max([item.eigvs.shape[1] for item in dataset_items])
 
     feat_dim = dataset_items[0].x.shape[1]
 
@@ -25,14 +25,15 @@ def collate_fn(dataset_items: list):
     eigvs_padded = torch.zeros((batch_size, max_k))
     U_padded = torch.zeros((batch_size, max_nodes, max_k))
 
+    train_mask = torch.zeros((batch_size, max_nodes), dtype=torch.bool)
+    test_mask = torch.zeros((batch_size, max_nodes), dtype=torch.bool)
     # Mask: True = Padding/Ignored
     eigvs_mask = torch.ones((batch_size, max_k), dtype=torch.bool)
 
     labels = []
-
     for i, data in enumerate(dataset_items):
         num_n = data.num_nodes
-        num_k = data.eigvs.shape[0]
+        num_k = data.eigvs.shape[1]
 
         # Spatial Features
         x_padded[i, :num_n, :] = data.x
@@ -42,6 +43,9 @@ def collate_fn(dataset_items: list):
 
         # Eigenvectors (Map Spatial N to Spectral K)
         U_padded[i, :num_n, :num_k] = data.U
+
+        train_mask[i, :num_n] = data.train_mask
+        test_mask[i, :num_n] = data.test_mask
 
         # Valid Mask (False = Real Data)
         eigvs_mask[i, :num_k] = False
@@ -58,6 +62,7 @@ def collate_fn(dataset_items: list):
         "eigvs_mask": eigvs_mask,
         "labels": torch.stack(labels),
         "edge_index": sparse_edge_index,
+        "train_mask": train_mask,
+        "test_mask": test_mask,
         "batch_idx": pyg_batch.batch  # type: ignore[attr-defined]
-
     }

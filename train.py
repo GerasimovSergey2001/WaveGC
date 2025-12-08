@@ -11,7 +11,7 @@ from src.utils.init_utils import set_random_seed, setup_saving_and_logging
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # CHANGE 1: Point config_path to the root 'configs' folder
-@hydra.main(version_base=None, config_path="configs", config_name="train_config")
+@hydra.main(version_base=None, config_path="src/configs", config_name="train_config")
 def main(config):
     """
     Main script for training. Instantiates the model, optimizer, scheduler,
@@ -29,7 +29,7 @@ def main(config):
         logger = logging.getLogger(__name__)
     
     # Instantiate Writer (Tensorboard/WandB)
-    writer = instantiate(config.writer, logger=logger, project_config=project_config)
+    writer = instantiate(config.writer)( logger=logger, project_config=project_config)
 
     if config.trainer.device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -38,9 +38,16 @@ def main(config):
 
     # 1. Setup DataLoaders (Uses your dense collate_fn automatically)
     dataloaders, batch_transforms = get_dataloaders(config, device)
-
+    inp_dim = dataloaders['train'].dataset.x.shape[1]
+    out_dim = dataloaders['train'].dataset.y.unique().shape[0]
+    eigvs_dim = dataloaders['train'].dataset.eigvs.shape[1]
+    
     # 2. Build Model (WaveGCNet)
-    model = instantiate(config.model).to(device)
+    try:
+        model = instantiate(config.model)(inp_dim=inp_dim, out_dim=out_dim, eigvs_dim=eigvs_dim).to(device)
+    except:
+        model = instantiate(config.model)(inp_dim=inp_dim, out_dim=out_dim).to(device)
+
     logger.info(f"Model: {config.model._target_}")
 
     # 3. Setup Loss and Metrics
@@ -55,11 +62,11 @@ def main(config):
 
     # 4. Build Optimizer & Scheduler
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = instantiate(config.optimizer, params=trainable_params)
+    optimizer = instantiate(config.optimizer)(params=trainable_params)
     
     lr_scheduler = None
-    if "lr_scheduler" in config:
-        lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer)
+    if "lr_scheduler" in config and config.lr_scheduler is not None:
+        lr_scheduler = instantiate(config.lr_scheduler)(optimizer=optimizer)
 
     # 5. Initialize Trainer
     epoch_len = config.trainer.get("epoch_len")

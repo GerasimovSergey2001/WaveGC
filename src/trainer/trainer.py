@@ -25,10 +25,15 @@ class Trainer(BaseTrainer):
 
         # 3. Prepare Inputs for WaveGCNet
         # Mapping batch keys (from collate_fn) to model args
+
+        for key in batch:
+            if key != 'eigvs':
+                batch[key] = batch[key].squeeze(0)
+
         model_inputs = {
             'x': batch['x'],
             'eigvs': batch['eigvs'],
-            'U': batch['U'],  # Model expects 'Us', collate provides 'U'
+            'U': batch['U'],
             'eigvs_mask': batch['eigvs_mask']
         }
 
@@ -53,17 +58,21 @@ class Trainer(BaseTrainer):
 
         # Ensure types match (Float for regression, Long for classif)
         # Check config to detect regression task
-        if self.config.model.out_dim > 1 and "classification" not in self.config.trainer:
-            targets = targets.float()
+        # if self.config.model.out_dim > 1 and "classification" not in self.config.trainer:
+        #     targets = targets.float()
 
-        loss = self.criterion(outputs, targets)
+        mask = batch['train_mask'] if self.is_train else batch['test_mask']
+
+        batch['mask'] = mask # for metric
+
+        loss = self.criterion(outputs, targets, mask)
 
         # Store loss for logging
-        batch['loss'] = loss
+        batch.update(loss)
 
         # 6. Backward Pass (Training only)
         if self.is_train:
-            loss.backward()
+            batch['loss'].backward()
             self._clip_grad_norm()
             self.optimizer.step()
             if self.lr_scheduler is not None:
@@ -71,12 +80,13 @@ class Trainer(BaseTrainer):
 
         # 7. Update Metrics
         for loss_name in self.config.writer.loss_names:
-            metrics.update(loss_name, loss.item())
+            metrics.update(loss_name, batch[loss_name].item())
 
         for met in metric_funcs:
-            metrics.update(met.name, met(outputs, targets))
+            metrics.update(met.name, met(**batch))
 
         return batch
+
 
     def _log_batch(self, batch_idx, batch, mode="train"):
         """

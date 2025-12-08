@@ -1,0 +1,23 @@
+_target_: src.model.wavegc.WaveGCNet
+# inp_dim: 750
+# out_dim: 8
+# eigvs_dim: 64
+emb_dim: 32
+pe_dim: 16
+lape_hidden_num: 1
+hidden_dim: 32
+heads_num: 4
+scale: 
+  _target_: torch.tensor
+  data: [1.0, 1.0, 1.0]
+num_layers: 4
+mpnn: "gcn"
+K: 6
+J: 3
+tight_frames: True
+dropout: 0.2
+ffn_hidden_num: 2
+mpnn_hidden_num: 1
+eps: 100
+aggr: "sum"
+_partial_: True

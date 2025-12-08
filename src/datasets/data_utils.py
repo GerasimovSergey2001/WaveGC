@@ -62,32 +62,32 @@ def get_dataloaders(config, device):
             tensor name.
     """
     # transforms or augmentations init
-    batch_transforms = instantiate(config.transforms.batch_transforms)
-    move_batch_transforms_to_device(batch_transforms, device)
-
+    batch_transforms_cfg = config.transforms.get('batch_transforms')
+    if batch_transforms_cfg is not None:
+        batch_transforms = instantiate(batch_transforms_cfg)
+        move_batch_transforms_to_device(batch_transforms, device)
+    else:
+        batch_transforms = None
     # dataset partitions init
     datasets = instantiate(config.datasets)  # instance transforms are defined inside
-
     # dataloaders init
     dataloaders = {}
     for dataset_partition in config.datasets.keys():
-        dataset = datasets[dataset_partition]
+        dataset = datasets[dataset_partition][0]
 
         assert config.dataloader.batch_size <= len(dataset), (
             f"The batch size ({config.dataloader.batch_size}) cannot "
             f"be larger than the dataset length ({len(dataset)})"
         )
-
-        partition_dataloader = instantiate(
-            config.dataloader,
+        partition_dataloader = instantiate(config.dataloader)(
             dataset=dataset,
             collate_fn=collate_fn,
-            drop_last=(dataset_partition == "train"),
-            shuffle=(dataset_partition == "train"),
+            #drop_last=(dataset_partition == "train"),
+            #shuffle=(dataset_partition == "train"),
             worker_init_fn=set_worker_seed,
         )
         dataloaders[dataset_partition] = partition_dataloader
-
+    dataloaders['test'] = dataloaders['train']
     return dataloaders, batch_transforms
 
 def allowlist_pyg_for_torch_load():
@@ -111,15 +111,3 @@ def allowlist_pyg_for_torch_load():
             pass
     if allowed:
         torch.serialization.add_safe_globals(allowed)
-
-# allowlist_pyg_for_torch_load()
-
-# dataset_name = 'ogbn-arxiv'
-# # Load the dataset and transform it to sparse tensor
-# dataset = PygNodePropPredDataset(name=dataset_name,
-#                                 transform=T.ToSparseTensor())
-# print('The {} dataset has {} graph'.format(dataset_name, len(dataset)))
-
-# # Extract the graph
-# data = dataset[0]
-# print(data)

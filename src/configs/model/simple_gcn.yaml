@@ -1,0 +1,4 @@
+_target_: src.model.SimpleGCN
+hidden_dim: 64
+hidden_num: 3
+_partial_: True
