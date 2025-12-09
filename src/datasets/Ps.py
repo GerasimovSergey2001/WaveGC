@@ -91,10 +91,25 @@ class PeptidesStructDataset(LRGBDataset):
         torch.save(data_list, self.processed_paths[0])
 
     def load(self, path):
-        self._data_list = torch.load(path)
+        """Load the processed data"""
+        data_list = torch.load(path)
+        # Store as _data_list for direct access
+        self._data_list = data_list
+        # Don't call collate - it doesn't work with variable spectral dimensions
+        # Instead, we'll use the list-based access pattern
     
     def len(self):
+        if not hasattr(self, '_data_list') or self._data_list is None:
+            return 0
         return len(self._data_list)
     
     def get(self, idx):
+        if not hasattr(self, '_data_list') or self._data_list is None:
+            raise RuntimeError("Dataset not loaded. Call load() first.")
         return self._data_list[idx]
+    
+    def get_data_list(self):
+        """Public method to access the full list of graphs"""
+        if not hasattr(self, '_data_list') or self._data_list is None:
+            raise RuntimeError("Dataset not loaded yet.")
+        return self._data_list
