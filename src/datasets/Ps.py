@@ -21,7 +21,7 @@ class PeptidesStructDataset(Dataset):  # Inherit from Dataset, not InMemoryDatas
         
         # Load the appropriate split
         path = osp.join(self.processed_dir, f'{split}.pt')
-        loaded_data = torch.load(path)
+        loaded_data = torch.load(path, weights_only=False)
         
         # Check what we loaded and handle accordingly
         if isinstance(loaded_data, list):
@@ -125,6 +125,8 @@ class PeptidesStructDataset(Dataset):  # Inherit from Dataset, not InMemoryDatas
             print(f"Saving {len(data_list)} graphs to {split}.pt")
             torch.save(data_list, osp.join(self.processed_dir, f'{split}.pt'))
             print(f"Finished processing {split} split")
+        
+        print("\nNote: This dataset uses torch.load with weights_only=False for PyG compatibility.")
 
     def len(self):
         return len(self._data_list)
