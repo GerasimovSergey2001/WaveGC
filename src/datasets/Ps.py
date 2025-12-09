@@ -6,7 +6,7 @@ import torch_geometric.transforms as T
 from ..transforms.spectral import WaveGCSpectralTransform
 
 class PeptidesStructDataset(Dataset):  # Inherit from Dataset, not InMemoryDataset
-    def __init__(self, root, split='train'):
+    def __init__(self, root, split='train', force_reload=False):
         self.name = 'Peptides-struct'
         self.split = split
         assert split in ['train', 'val', 'test']
@@ -17,7 +17,7 @@ class PeptidesStructDataset(Dataset):  # Inherit from Dataset, not InMemoryDatas
             WaveGCSpectralTransform(mode='long', top_k_pct=1.0)
         ])
         
-        super().__init__(root, transform=None, pre_transform=pre_transform)
+        super().__init__(root, transform=None, pre_transform=pre_transform, force_reload=force_reload)
         
         # Load the appropriate split
         path = osp.join(self.processed_dir, f'{split}.pt')
@@ -51,6 +51,17 @@ class PeptidesStructDataset(Dataset):  # Inherit from Dataset, not InMemoryDatas
             print(f"Unpacked {len(self._data_list)} graphs from tuple format")
         else:
             raise RuntimeError(f"Unexpected data format: {type(loaded_data)}")
+        
+        # Check if spectral features are present
+        if len(self._data_list) > 0 and not hasattr(self._data_list[0], 'eigvs'):
+            print("\nWARNING: Spectral features not found!")
+            print("The dataset was loaded from pre-existing processed files without spectral transforms.")
+            print("To add spectral features, either:")
+            print("  1. Delete the processed directory and reload:")
+            print("     import shutil")
+            print("     shutil.rmtree('./data/Peptides-struct/processed/')")
+            print("  2. Or use force_reload=True:")
+            print("     dataset = PeptidesStructDataset(root='./data', split='train', force_reload=True)")
 
     @property
     def raw_dir(self):
