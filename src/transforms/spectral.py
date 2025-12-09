@@ -8,18 +8,19 @@ from torch_geometric.utils import get_laplacian, to_scipy_sparse_matrix
 
 
 class WaveGCSpectralTransform:
-    def __init__(self, mode='long', top_k=None, top_k_pct=1.0, max_freqs=None):
+    def __init__(self, mode='long', top_k=None, top_k_pct=1.0, threshold=0.0):
         """
         Args:
             mode (str): 'short' or 'long'.
             top_k (int, optional): Exact number of eigenvalues to keep.
                                    Prioritized over top_k_pct if set.
             top_k_pct (float): Percentage of eigenvalues to keep (default 1.0).
+            threshold (float): Threshold for sparsifying U (default 0.0).
         """
         self.mode = mode
         self.top_k = top_k
         self.top_k_pct = top_k_pct
-        self.max_freqs = max_freqs
+        self.threshold = threshold
 
     def __call__(self, data: Data) -> Data:
         N = data.num_nodes
@@ -38,7 +39,7 @@ class WaveGCSpectralTransform:
         assert data.edge_index is not None, "Data object must have edge_index"
         edge_index, edge_weight = get_laplacian(
             data.edge_index,
-            edge_weight=None,
+            edge_weight=data.edge_attr,
             normalization='sym',
             num_nodes=N
         )
@@ -74,24 +75,23 @@ class WaveGCSpectralTransform:
                 eig_vals, U = eigh(L_dense)
                 eig_vals = eig_vals[:k]
                 U = U[:, :k]
-        
-        real_k = len(eig_vals)
-        if self.max_freqs is not None:
-            if real_k < self.max_freqs:
-                pad_width = self.max_freqs - real_k
-                # Pad Eigenvalues [k] -> [max_freqs]
-                eig_vals = np.pad(eig_vals, (0, pad_width), 'constant', constant_values=0)
-                # Pad Eigenvectors [N, k] -> [N, max_freqs]
-                U = np.pad(U, ((0, 0), (0, pad_width)), 'constant', constant_values=0)
-            elif real_k > self.max_freqs:
-                # Truncate if graph is unexpectedly large
-                eig_vals = eig_vals[:self.max_freqs]
-                U = U[:, :self.max_freqs]
-                real_k = self.max_freqs
 
-        data.eigvs = torch.from_numpy(eig_vals).float().clamp(0.0, 2.0)
-        data.U = torch.from_numpy(U).float()
-        # Save actual count so Collate can mask the padding
-        data.num_freqs = torch.tensor([real_k]) 
-        
+        # 4. Convert to Tensor
+        # eig_vals: [k]
+        # U: [N, k]
+        eig_vals = torch.from_numpy(eig_vals).float()
+        U = torch.from_numpy(U).float()
+
+        # Clamp for numerical stability (Theoretically in [0, 2])
+        eig_vals = torch.clamp(eig_vals, 0.0, 2.0)
+
+        # [cite_start]5. Sparsification (Short-Range Nuance) [cite: 763]
+        if self.threshold > 0:
+            mask = torch.abs(U) >= self.threshold
+            U = U * mask
+
+        # Store results
+        data.eigvs = eig_vals.view(1, -1)
+        data.U = U
+
         return data
