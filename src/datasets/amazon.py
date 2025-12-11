@@ -15,7 +15,6 @@ class AmazonComputerDataset(Amazon):
         ])
         super().__init__(root=root, name=name, pre_transform=pre_transform)
 
-    # Compatibility with your repo's BaseDataset style
     def __getitem__(self, idx):
         data = super().__getitem__(idx)
-        return data  # The collate_fn will handle the unpacking
+        return data

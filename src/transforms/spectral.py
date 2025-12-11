@@ -85,7 +85,7 @@ class WaveGCSpectralTransform:
         # Clamp for numerical stability (Theoretically in [0, 2])
         eig_vals = torch.clamp(eig_vals, 0.0, 2.0)
 
-        # [cite_start]5. Sparsification (Short-Range Nuance) [cite: 763]
+        # 5. Sparsification (Short-Range Nuance) [cite: 763]
         if self.threshold > 0:
             mask = torch.abs(U) >= self.threshold
             U = U * mask
