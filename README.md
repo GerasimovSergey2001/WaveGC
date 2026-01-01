@@ -1,22 +1,4 @@
 # WaveGC: Wavelet Graph Convolutional Networks
-
-<p align="center">
-<a href="#about">About</a> •
-<a href="#key-features">Key Features</a> •
-<a href="#installation">Installation</a> •
-<a href="#usage">Usage</a> •
-<a href="#configuration">Configuration</a> •
-<a href="#project-structure">Structure</a> •
-<a href="#credits">Credits</a> •
-<a href="#license">License</a>
-</p>
-
-<p align="center">
-<img src="[https://img.shields.io/badge/python-3.9+-blue.svg](https://www.google.com/search?q=https://img.shields.io/badge/python-3.9%2B-blue.svg)" alt="Python Version">
-<img src="[https://img.shields.io/badge/pytorch-2.0+-orange.svg](https://www.google.com/search?q=https://img.shields.io/badge/pytorch-2.0%2B-orange.svg)" alt="PyTorch Version">
-<img src="[https://img.shields.io/badge/license-MIT-green.svg](https://www.google.com/search?q=https://img.shields.io/badge/license-MIT-green.svg)" alt="License">
-</p>
-
 ## About
 
 **WaveGC** is a PyTorch-based Deep Learning library implementing **Wavelet Graph Convolutional Networks (WaveGCNet)**.
@@ -166,8 +148,6 @@ wavegc/
 ```
 
 ## Credits
-
-This repository was developed by **Sergei Gerasimov** and **Soumodeep Hoodaty**.
 
 * **Original Paper:** *A General Graph Spectral Wavelet Convolution via Chebyshev Order Decomposition*.
 * **Original Repository:** The official implementation by the paper authors can be found at [https://github.com/liun-online/WaveGC](https://github.com/liun-online/WaveGC).
